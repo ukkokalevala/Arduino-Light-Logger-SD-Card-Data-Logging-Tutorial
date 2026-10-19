@@ -1,0 +1,70 @@
+#include <SPI.h>
+#include <SD.h>
+
+const int SD_CS_PIN = 10;
+const int LDR_PIN   = A0;
+
+const unsigned long LOG_INTERVAL_MS = 10000UL;  // 10 s for testing (60000 = 1 min)
+const char* LOG_FILENAME = "light.csv";
+
+File logFile;
+unsigned long lastLogMs = 0;
+
+void setup() {
+  Serial.begin(9600);
+  pinMode(LDR_PIN, INPUT);
+
+  Serial.println(F("Light Logger"));
+  Serial.println(F("------------"));
+
+  // SD card power-up delay (the fix we discovered)
+  pinMode(SD_CS_PIN, OUTPUT);
+  digitalWrite(SD_CS_PIN, HIGH);
+  delay(1000);
+
+  if (!SD.begin(SD_CS_PIN)) {
+    Serial.println(F("SD FAILED"));
+    while (1);
+  }
+  Serial.println(F("SD OK."));
+
+  // Write header if new file
+  bool needHeader = true;
+  if (SD.exists(LOG_FILENAME)) {
+    logFile = SD.open(LOG_FILENAME, FILE_READ);
+    if (logFile) { needHeader = (logFile.size() == 0); logFile.close(); }
+  }
+  if (needHeader) {
+    logFile = SD.open(LOG_FILENAME, FILE_WRITE);
+    if (logFile) {
+      logFile.println(F("uptime_s,light_raw,light_percent"));
+      logFile.close();
+      Serial.println(F("Created light.csv"));
+    }
+  }
+
+  lastLogMs = millis();
+}
+
+void loop() {
+  if (millis() - lastLogMs >= LOG_INTERVAL_MS) {
+    lastLogMs = millis();
+
+    int raw = analogRead(LDR_PIN);
+    int pct = map(raw, 0, 1023, 0, 100);
+
+    logFile = SD.open(LOG_FILENAME, FILE_WRITE);
+    if (logFile) {
+      logFile.print(millis() / 1000); logFile.print(',');
+      logFile.print(raw);             logFile.print(',');
+      logFile.println(pct);
+      logFile.close();
+
+      Serial.print(F("Logged: raw=")); Serial.print(raw);
+      Serial.print(F("  (")); Serial.print(pct);
+      Serial.println(F("%)"));
+    } else {
+      Serial.println(F("SD write failed!"));
+    }
+  }
+}
